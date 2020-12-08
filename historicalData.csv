@@ -1,4 +1,4 @@
-﻿id,passPrediction,actualPass,durationPrediction,actualDuration,availableIncrement,rank
+﻿id,passPrediction,actualPass,durationPrediction,actualDuration,availableIncrementStep,rank
 1,0.328548191,0,812,447,5,1
 2,0.149165014,1,251,427,10,2
 3,0.600421256,0,304,194,15,3

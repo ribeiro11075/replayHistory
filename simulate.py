@@ -6,34 +6,36 @@ import numpy as np
 
 class replayHistory():
 
-    def __init__(self, staffNumber: int, staffCapcity: int, incrementType: Optional[str]=None, increment: float=1, incrementQuitBeforeStart: int=400, incrementQuitAfterStart: int=500, incrementQuitTotal: int=650, duration: int=1000):
+    def __init__(self, staffNumber: int, staffCapcity: int, incrementStep: float, incrementQuitBefore: int, incrementQuitAfter: int, incrementQuitTotal: int, duration: int, incrementLabel: Optional[str]=None):
         self.incrementTracker = 0
-        self.incrementType = incrementType
-        self.increment = increment
+        self.incrementLabel = incrementLabel
+        self.incrementStep = incrementStep
         self.staffNumber = staffNumber
         self.staffCapcity = staffCapcity
-        self.incrementQuitBeforeStart = incrementQuitBeforeStart
-        self.incrementQuitAfterStart = incrementQuitAfterStart
+        self.incrementQuitBefore = incrementQuitBefore
+        self.incrementQuitAfter = incrementQuitAfter
         self.incrementQuitTotal = incrementQuitTotal
         self.duration = duration
-        self.requiredInputDataFrameColumns = ['actualDuration', 'availableIncrement', 'rank']
+        self.requiredInputDataFrameColumns = ['actualDuration', 'availableIncrementStep', 'rank']
         self.staffQueue = {i: {'availableQueue': self.staffCapcity} for i in range(1, self.staffNumber + 1)}
-        self.staffQueueColumnNames = ['staff', 'increment', 'availableQueue']
+        self.staffQueueColumnNames = ['staff', 'incrementStep', 'availableQueue']
 
 
-    def _replaceIncrementNaming(self):
+    def _replaceIncrementLabel(self):
 
-        if self.incrementType:
-            self.dfProcess.columns = self.dfProcess.columns.str.replace('increment', self.incrementType.lower()).str.replace('Increment', self.incrementType.title())
-            self.dfStaffQueue.columns = self.dfStaffQueue.columns.str.replace('increment', self.incrementType.lower()).str.replace('Increment', self.incrementType.title())
+        if self.incrementLabel:
+            self.dfProcess.columns = self.dfProcess.columns.str.replace('incrementStep', self.incrementLabel.lower()).str.replace('IncrementStep', self.incrementLabel.title())
+            self.dfStaffQueue.columns = self.dfStaffQueue.columns.str.replace('incrementStep', self.incrementLabel.lower()).str.replace('IncrementStep', self.incrementLabel.title())
 
 
     def _checkInputDataFrame(self) -> bool:
 
-        if all([column in self.dfProcess.columns and pd.api.types.is_numeric_dtype(self.dfProcess[column]) for column in self.requiredInputDataFrameColumns]):
-            return True
+        if not all([column in self.dfProcess.columns and pd.api.types.is_numeric_dtype(self.dfProcess[column]) for column in self.requiredInputDataFrameColumns]):
+            print('The columns {} are all required in the input dataframe and must be numeric type'.format(self.requiredInputDataFrameColumns))
 
-        return False
+            return False
+
+        return True
 
 
     def _generateCommonConditions(self) -> (pd.Series, pd.Series, pd.Series, pd.Series):
@@ -41,14 +43,14 @@ class replayHistory():
         hasNotComplete = self.dfProcess['completeIncrement'].isnull()
         hasNotQuitCondition = self.dfProcess['quitIncrement'].isnull()
         hasNotStartedCondition = self.dfProcess['startIncrement'].isnull()
-        isAvailableCondition = self.dfProcess['availableIncrement'] <= self.incrementTracker
+        isAvailableCondition = self.dfProcess['availableIncrementStep'] <= self.incrementTracker
 
         return hasNotComplete, hasNotQuitCondition, hasNotStartedCondition, isAvailableCondition
 
 
     def _updateTracking(self, df: pd.DataFrame, currentQueueAdd: bool):
 
-        self.dfProcess.update(df) if not df.empty else None
+        self.dfProcess.update(df)
 
         for staff, count in df['staff'].value_counts().iteritems():
             self.staffQueue[staff]['availableQueue'] -= count if currentQueueAdd else count * -1
@@ -60,17 +62,15 @@ class replayHistory():
         dfIncrementStart = pd.DataFrame(data=data, columns=self.staffQueueColumnNames)
         self.dfStaffQueue = pd.concat([self.dfStaffQueue, dfIncrementStart])
 
-        return self
-
 
     def _quit(self):
 
         hasNotComplete, hasNotQuitCondition, hasNotStartedCondition, isAvailableCondition = self._generateCommonConditions()
         
-        daysSinceAvailable = self.incrementTracker - self.dfProcess['availableIncrement']
+        daysSinceAvailable = self.incrementTracker - self.dfProcess['availableIncrementStep']
         daysAfterStart = self.incrementTracker - self.dfProcess['startIncrement']
-        exceedWaitBeforeStartCondition = daysSinceAvailable >= self.incrementQuitBeforeStart
-        exceedWaitAfterStartCondition = daysAfterStart >= self.incrementQuitAfterStart
+        exceedWaitBeforeStartCondition = daysSinceAvailable >= self.incrementQuitBefore
+        exceedWaitAfterStartCondition = daysAfterStart >= self.incrementQuitAfter
         exceedWaitTotalCondition = daysSinceAvailable >= self.incrementQuitTotal
         quitBeforeStartCondition = hasNotComplete & hasNotQuitCondition & hasNotStartedCondition & exceedWaitBeforeStartCondition
         quitAfterStartCondition = hasNotComplete & hasNotQuitCondition & ~hasNotStartedCondition & exceedWaitAfterStartCondition
@@ -79,9 +79,7 @@ class replayHistory():
         dfQuit = self.dfProcess[quitBeforeStartCondition | quitAfterStartCondition | quitTotalTimeCondition].copy()
         dfQuit['quitIncrement'] = self.incrementTracker
 
-        self._updateTracking(df=dfQuit, currentQueueAdd=False)
-
-        return self
+        self._updateTracking(df=dfQuit, currentQueueAdd=False) if not dfQuit.empty else None
 
 
     def _complete(self):
@@ -92,9 +90,7 @@ class replayHistory():
         dfComplete = self.dfProcess[hasNotComplete & hasNotQuitCondition & durationCompletedCondition].copy()
         dfComplete['completeIncrement'] = self.incrementTracker
 
-        self._updateTracking(df=dfComplete, currentQueueAdd=False)
-
-        return self
+        self._updateTracking(df=dfComplete, currentQueueAdd=False) if not dfComplete.empty else None
 
 
     def _select(self):
@@ -108,9 +104,7 @@ class replayHistory():
         dfTotalPickup['startIncrement'] = self.incrementTracker
         dfTotalPickup['staff'] = staffAssignment
 
-        self._updateTracking(df=dfTotalPickup, currentQueueAdd=True)
-
-        return self
+        self._updateTracking(df=dfTotalPickup, currentQueueAdd=True) if not dfTotalPickup.empty else None
 
 
     def run(self, dfQueue: pd.DataFrame, saveResults: Optional[bool] = False):
@@ -122,11 +116,14 @@ class replayHistory():
         if self._checkInputDataFrame():
     
             while self.incrementTracker <= self.duration and not self.dfProcess[self.dfProcess['completeIncrement'].isnull() & self.dfProcess['quitIncrement'].isnull()].empty:
-                self._trackIncrementStartingQueue()._quit()._complete()._select()
-                self.incrementTracker += self.increment
+                self._trackIncrementStartingQueue()
+                self._quit()
+                self._complete()
+                self._select()
+                self.incrementTracker += self.incrementStep
 
             self.dfStaffQueue['currentQueue'] = self.staffCapcity - self.dfStaffQueue['availableQueue']
-            self._replaceIncrementNaming()
+            self._replaceIncrementLabel()
 
             if saveResults:
                 self.dfProcess.to_csv('resultsQueue.csv', index=False)
@@ -134,5 +131,5 @@ class replayHistory():
 
 
 dfQueue = pd.read_csv('historicalData.csv')
-simulation = replayHistory(staffNumber=4, staffCapcity=5)
+simulation = replayHistory(staffNumber=4, staffCapcity=5, incrementStep=1, incrementQuitBefore=400, incrementQuitAfter=500, incrementQuitTotal=650, duration=1000)
 simulation.run(dfQueue=dfQueue, saveResults=True)
