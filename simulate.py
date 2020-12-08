@@ -40,9 +40,9 @@ class replayHistory():
 
     def _generateCommonConditions(self) -> (pd.Series, pd.Series, pd.Series, pd.Series):
 
-        hasNotComplete = self.dfProcess['completeIncrement'].isnull()
-        hasNotQuitCondition = self.dfProcess['quitIncrement'].isnull()
-        hasNotStartedCondition = self.dfProcess['startIncrement'].isnull()
+        hasNotComplete = self.dfProcess['completeIncrementStep'].isnull()
+        hasNotQuitCondition = self.dfProcess['quitIncrementStep'].isnull()
+        hasNotStartedCondition = self.dfProcess['startIncrementStep'].isnull()
         isAvailableCondition = self.dfProcess['availableIncrementStep'] <= self.incrementTracker
 
         return hasNotComplete, hasNotQuitCondition, hasNotStartedCondition, isAvailableCondition
@@ -68,7 +68,7 @@ class replayHistory():
         hasNotComplete, hasNotQuitCondition, hasNotStartedCondition, isAvailableCondition = self._generateCommonConditions()
         
         daysSinceAvailable = self.incrementTracker - self.dfProcess['availableIncrementStep']
-        daysAfterStart = self.incrementTracker - self.dfProcess['startIncrement']
+        daysAfterStart = self.incrementTracker - self.dfProcess['startIncrementStep']
         exceedWaitBeforeStartCondition = daysSinceAvailable >= self.incrementQuitBefore
         exceedWaitAfterStartCondition = daysAfterStart >= self.incrementQuitAfter
         exceedWaitTotalCondition = daysSinceAvailable >= self.incrementQuitTotal
@@ -77,7 +77,7 @@ class replayHistory():
         quitTotalTimeCondition = hasNotComplete & hasNotQuitCondition & exceedWaitTotalCondition
 
         dfQuit = self.dfProcess[quitBeforeStartCondition | quitAfterStartCondition | quitTotalTimeCondition].copy()
-        dfQuit['quitIncrement'] = self.incrementTracker
+        dfQuit['quitIncrementStep'] = self.incrementTracker
 
         self._updateTracking(df=dfQuit, currentQueueAdd=False) if not dfQuit.empty else None
 
@@ -86,9 +86,9 @@ class replayHistory():
 
         hasNotComplete, hasNotQuitCondition, hasNotStartedCondition, isAvailableCondition = self._generateCommonConditions()
 
-        durationCompletedCondition = (self.incrementTracker - self.dfProcess['startIncrement']) >= self.dfProcess['actualDuration']
+        durationCompletedCondition = (self.incrementTracker - self.dfProcess['startIncrementStep']) >= self.dfProcess['actualDuration']
         dfComplete = self.dfProcess[hasNotComplete & hasNotQuitCondition & durationCompletedCondition].copy()
-        dfComplete['completeIncrement'] = self.incrementTracker
+        dfComplete['completeIncrementStep'] = self.incrementTracker
 
         self._updateTracking(df=dfComplete, currentQueueAdd=False) if not dfComplete.empty else None
 
@@ -101,7 +101,7 @@ class replayHistory():
         random.shuffle(staffAvailability)
         dfTotalPickup = self.dfProcess[hasNotQuitCondition & hasNotStartedCondition & isAvailableCondition].sort_values('rank').iloc[0:len(staffAvailability)].copy()
         staffAssignment = staffAvailability[0:len(dfTotalPickup)]
-        dfTotalPickup['startIncrement'] = self.incrementTracker
+        dfTotalPickup['startIncrementStep'] = self.incrementTracker
         dfTotalPickup['staff'] = staffAssignment
 
         self._updateTracking(df=dfTotalPickup, currentQueueAdd=True) if not dfTotalPickup.empty else None
@@ -110,12 +110,12 @@ class replayHistory():
     def run(self, dfQueue: pd.DataFrame, saveResults: Optional[bool] = False):
 
         self.dfProcess = dfQueue.copy()
-        self.dfProcess[['startIncrement', 'completeIncrement', 'quitIncrement', 'staff']] = np.nan
+        self.dfProcess[['startIncrementStep', 'completeIncrementStep', 'quitIncrementStep', 'staff']] = np.nan
         self.dfStaffQueue = pd.DataFrame(columns=self.staffQueueColumnNames)
 
         if self._checkInputDataFrame():
     
-            while self.incrementTracker <= self.duration and not self.dfProcess[self.dfProcess['completeIncrement'].isnull() & self.dfProcess['quitIncrement'].isnull()].empty:
+            while self.incrementTracker <= self.duration and not self.dfProcess[self.dfProcess['completeIncrementStep'].isnull() & self.dfProcess['quitIncrementStep'].isnull()].empty:
                 self._trackIncrementStartingQueue()
                 self._quit()
                 self._complete()
@@ -131,5 +131,5 @@ class replayHistory():
 
 
 dfQueue = pd.read_csv('historicalData.csv')
-simulation = replayHistory(staffNumber=4, staffCapcity=5, incrementStep=1, incrementQuitBefore=400, incrementQuitAfter=500, incrementQuitTotal=650, duration=1000)
+simulation = replayHistory(staffNumber=4, staffCapcity=5, incrementLabel='day', incrementStep=1, incrementQuitBefore=400, incrementQuitAfter=500, incrementQuitTotal=650, duration=1000)
 simulation.run(dfQueue=dfQueue, saveResults=True)
